@@ -1,4 +1,4 @@
-title: Super cool run
+title: Supercoolrun
 default:
   fdr_level: protein
   comet:
@@ -8,35 +8,33 @@ default:
     type: uniprot
     value: UP000005640
   BiblioSpec:
-    cutoff: 0.95
+    cutoff: 0.99
 combine:
   - name: SuperCoolCombination
     experiments:
-      - First exp
-      - Second exp
-    comet:
-      - peptide_mass_tolerance: 20
+      - Firstexp
+      - Secondexp
   - name: Only first exp
     experiments:
       - First exp
 experiments:
-  - name: First exp
+  - name: Firstexp
     files:
       - /path/to/raw/file.raw
       - /path/to/raw/otherfile.raw
     fasta:
-      - type: uniprot
-        value: UP000005640
+      type: uniprot
+      value: UP000005640
     comet:
-      - peptide_mass_tolerance: 20
-  - name: Second exp
+      peptide_mass_tolerance: 20
+  - name: Secondexp
     files:
       - /path/to/others.raw
       - /path/to/others.raw
     fasta:
-      - type: uniprot
-        value: UP000000589
+      type: uniprot
+      value: UP000000589
     comet:
-      - peptide_mass_tolerance: 50
+      peptide_mass_tolerance: 50
     BiblioSpec:
-      - cutoff: 0.95
+      cutoff: 0.95
