@@ -16,12 +16,12 @@ combine:
       - Secondexp
   - name: Only first exp
     experiments:
-      - First exp
+      - Firstexp
 experiments:
   - name: Firstexp
     files:
-      - /path/to/raw/file.raw
-      - /path/to/raw/otherfile.raw
+      - /path/to/raw/file1.mzML
+      - /path/to/raw/otherfile.mzML
     fasta:
       type: uniprot
       value: UP000005640
@@ -29,8 +29,8 @@ experiments:
       peptide_mass_tolerance: 20
   - name: Secondexp
     files:
-      - /path/to/others.raw
-      - /path/to/others.raw
+      - /path/to/others.mzML
+      - /path/to/others2.mzML
     fasta:
       type: uniprot
       value: UP000000589

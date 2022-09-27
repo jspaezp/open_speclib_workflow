@@ -1,0 +1,5 @@
+
+raw_files/
+.snakemake
+experiment_assets/
+scratch.py
