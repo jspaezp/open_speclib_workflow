@@ -1,7 +1,8 @@
 
 **This in still in progress, it will not run**
 
-2. Yaml validation
+1. Yaml validation
+2. Discover system comet and bibliospec
 
 
 ## Configuration
@@ -64,6 +65,8 @@ experiments:
 ```
 
 ## Running
+
+You need to provide a yaml configuration with the `--configfile` option
 
 ```shell
 poetry run snakemake --dry-run -s snakefile.smk --configfile ./reference_files/run.yml
