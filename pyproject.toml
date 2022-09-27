@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "open-speclib-workflow"
+version = "0.1.0"
+description = ""
+authors = ["J. Sebastian Paez <jspaezp@users.noreply.github.com>"]
+license = "Apache 2.0"
+readme = "README.md"
+packages = [{include = "open_speclib_workflow"}]
+
+[tool.poetry.dependencies]
+python = ">3.8,<3.12"
+snakemake = "^7.14.1"
+mokapot = "^0.8.3"
+pandas = "^1.5.0"
+loguru = "^0.6.0"
+
+
+[tool.poetry.group.dev.dependencies]
+snakefmt = "^0.6.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

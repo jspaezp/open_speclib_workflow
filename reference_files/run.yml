@@ -1,0 +1,42 @@
+title: Super cool run
+default:
+  fdr_level: protein
+  comet:
+    peptide_mass_tolerance: 20
+    num_threads: 10
+  fasta:
+    type: uniprot
+    value: UP000005640
+  BiblioSpec:
+    cutoff: 0.95
+combine:
+  - name: SuperCoolCombination
+    experiments:
+      - First exp
+      - Second exp
+    comet:
+      - peptide_mass_tolerance: 20
+  - name: Only first exp
+    experiments:
+      - First exp
+experiments:
+  - name: First exp
+    files:
+      - /path/to/raw/file.raw
+      - /path/to/raw/otherfile.raw
+    fasta:
+      - type: uniprot
+        value: UP000005640
+    comet:
+      - peptide_mass_tolerance: 20
+  - name: Second exp
+    files:
+      - /path/to/others.raw
+      - /path/to/others.raw
+    fasta:
+      - type: uniprot
+        value: UP000000589
+    comet:
+      - peptide_mass_tolerance: 50
+    BiblioSpec:
+      - cutoff: 0.95
