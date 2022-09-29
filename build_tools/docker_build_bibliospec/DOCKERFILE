@@ -1,0 +1,6 @@
+
+FROM --platform=linux/amd64 gcc:latest
+# builds for arm in my mac... if you dont set the plataform
+
+RUN gcc --version
+CMD ["/bin/bash"]

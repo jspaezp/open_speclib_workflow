@@ -1,0 +1,27 @@
+FROM python:stable-slim
+
+RUN mkdir -p /data/results
+
+COPY 20181210_15cm_3_HelaDilution_30min_0ng_28Hz_R1.mzML /data
+COPY 20181210_15cm_3_HelaDilution_30min_1000ng_28Hz_R1.mzML /data
+COPY 20181210_15cm_3_HelaDilution_30min_1000ng_41Hz_R1.mzML /data
+
+COPY ../snakefile.smk /data
+COPY run.yml /data
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-wheel \
+    python3-numpy \
+    python3-pandas
+
+COPY ../requirements.txt requirements.txt
+
+RUN pip3 install --upgrade pip
+RUN pip3 install -f requirements.txt
+
+WORKDIR /data
+
+CMD snakemake --verbose --cores 1 --directory $PWD -s snakefile.smk --configfile /run.yml
+

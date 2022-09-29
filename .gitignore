@@ -3,3 +3,8 @@ raw_files/
 .snakemake
 experiment_assets/
 scratch.py
+**.raw
+BlibBuild
+BlibFilter
+BlibSearch
+BlibToMS2

@@ -2,14 +2,16 @@ from snakemake.utils import min_version
 min_version("6.0")
 
 from contextlib import contextmanager
-from loguru import logger
+from loguru import logger as lg_logger
+
+import tempfile
 import requests
 import re
 
 import numpy as np
 import pandas as pd
 
-logger.info(f"Config: {config}")
+lg_logger.info(f"Config: {config}")
 
 def split_configs(config: dict):
     """Split config into multiple configs.
@@ -35,13 +37,13 @@ def split_configs(config: dict):
     for x in config["combine"]:
         combine_configs[x["name"]].update(x)
 
-    logger.info(f"Combine Configs: {combine_configs}")
+    lg_logger.info(f"Combine Configs: {combine_configs}")
 
     experiment_configs = {x["name"]: DEFAULT_CONFIG.copy() for x in config["experiments"]}
     for x in config["experiments"]:
         experiment_configs[x["name"]].update(x)
 
-    logger.info(f"Experiment Configs: {experiment_configs}")
+    lg_logger.info(f"Experiment Configs: {experiment_configs}")
     return DEFAULT_CONFIG, combine_configs, experiment_configs
 
 
@@ -60,21 +62,21 @@ def expand_files(combine_configs, experiment_configs):
     exp_files_map = {x: {y:[] for y in ('mzML', 'pin')} for x in experiment_configs}
 
     for experiment, exp_values in experiment_configs.items():
-        files.append(f"experiment_assets/{experiment}/mokapot/mokapot.psms.txt")
-        files.append(f"experiment_assets/{experiment}/bibliospec/{experiment}.blib")
+        files.append(f"results/{experiment}/mokapot/mokapot.psms.txt")
+        files.append(f"results/{experiment}/bibliospec/{experiment}.blib")
         fasta_name = Path(exp_values['fasta']['value']).stem
-        files.append(f"experiment_assets/{experiment}/fasta/{fasta_name}.fasta")
+        files.append(f"results/{experiment}/fasta/{fasta_name}.fasta")
         tmp_psm_files = exp_values["files"]
         tmp_psm_files = [Path(x).stem for x in tmp_psm_files]
         for raw_file in tmp_psm_files:
-            pin_file = f"experiment_assets/{experiment}/comet/{raw_file}.pin"
-            mzml_file = f"experiment_assets/{experiment}/mzml/{raw_file}.mzML"
+            pin_file = f"results/{experiment}/comet/{raw_file}.pin"
+            mzml_file = f"results/{experiment}/mzml/{raw_file}.mzML"
             exp_files_map[experiment]['pin'].append(pin_file)
             exp_files_map[experiment]['mzML'].append(mzml_file)
             files.append(pin_file)
             files.append(mzml_file)
 
-    logger.info(f"Expanded files: {files}")
+    lg_logger.info(f"Expanded files: {files}")
     for f in files:
         assert " " not in f, f"No spaces are allowed in file names. {f} has a space."
     return files, exp_files_map
@@ -88,11 +90,17 @@ rule all:
     input:
         *files
 
+rule binaries:
+    input:
+        "bin/comet.exe",
+        "bin/BlibBuild",
+        "bin/BlibFilter",
+
 from pathlib import Path
 
 for exp_name in experiment_configs:
     for filetype in ['raw','mzml','comet','fasta','mokapot','bibliospec']:
-        Path(f"experiment_assets/{exp_name}/{filetype}").mkdir(parents=True, exist_ok=True)
+        Path(f"results/{exp_name}/{filetype}").mkdir(parents=True, exist_ok=True)
 
 # rule convert_raw:
 #     """
@@ -102,9 +110,9 @@ for exp_name in experiment_configs:
 #     I am using docker to run msconvert in GCP
 #     """
 #     input:
-#         "experiment_assets/{experiment}/raw/{raw_file}",
+#         "results/{experiment}/raw/{raw_file}",
 #     output:
-#         "experiment_assets/{experiment}/mzml/{raw_file}.mzML"
+#         "results/{experiment}/mzml/{raw_file}.mzML"
 #     run:
 #         raise NotImplementedError
 # ruleorder: link_mzML > convert_raw
@@ -119,7 +127,7 @@ def get_provided_file(wildcards):
     if not out[0].endswith('.mzML'):
         raise NotImplementedError("Only mzML files are supported.")
     if not Path(out[0]).exists():
-        logger.warning(f"Provided file {out[0]} does not exist.")
+        lg_logger.warning(f"Provided file {out[0]} does not exist.")
 
     return out[0]
 
@@ -132,39 +140,58 @@ rule link_mzML:
     input:
         in_mzml = get_provided_file
     output:
-        out_mzml = "experiment_assets/{experiment}/mzml/{raw_file}.mzML"
+        out_mzml = "results/{experiment}/mzml/{raw_file}.mzML"
     run:
         # The actual path for the link
+        lg_logger.info("Linking mzML file")
         link = Path(output.out_mzml)
-        assert input.in_mzml.exists(), f"{input.in_mzml} does not exist."
-        link.symlink_to(input.in_mzml)
-        logger.debug(f"Created link {link} to {input.in_mzml}")
+
+        lg_logger.info("Creaiting dir"+ f"mkdir -p {str(link.parent.resolve())}")
+        # cmd = f"mkdir -p {str(link.parent.resolve())}"
+        # shell(cmd)
+
+        shell_cmd = f"ln -s --verbose {str(Path(input.in_mzml).resolve())} {str(link.resolve())}"
+        lg_logger.info(f"Shell Link ${shell_cmd}")
+        shell(shell_cmd)
+        lg_logger.info(f"Created link {link} to {input.in_mzml}")
         
 
 rule get_fasta:
     """Gets fasta files needed for experiments
 
     Download the fasta file from the internet if its an internet location.
-    It it exists locally it just copies it to the experiment_assets folder
+    It it exists locally it just copies it to the results folder
     """
     output:
-        fasta_file = "experiment_assets/{experiment}/fasta/{fasta_file}.fasta",
+        fasta_file = "results/{experiment}/fasta/{fasta_file}.fasta",
     run:
-        fasta_name = experiment_configs[experiment]["fasta"]["name"]
-        fasta_type = experiment_configs[experiment]["fasta"]["type"]
-        if fasta_type == "url":
-            shell(f"wget {fasta_name} -O {output.fasta_file}")
-        elif fasta_type == "file":
-            shell(f"cp {fasta_name} {output.fasta_file}")
-        elif fasta_type == "unirpot":
+        fasta_conf = dict(experiment_configs[wildcards.experiment]['fasta'])
+        lg_logger.info(f"Getting fasta file: {fasta_conf}")
 
+        fasta_name = fasta_conf['value']
+        fasta_type = fasta_conf['type']
+        lg_logger.info(f"Getting fasta file: {fasta_conf['value']}")
+        lg_logger.info(f"Getting fasta file: {fasta_conf['type']}")
+
+        if fasta_type.startswith("url"):
+            lg_logger.info("Fasta of type url")
+            shell(f"wget {fasta_name} -O {output.fasta_file}")
+        elif fasta_type.startswith("file"):
+            lg_logger.info("Fasta of type file")
+            shell(f"cp {fasta_name} {output.fasta_file}")
+        elif fasta_type.startswith("uniprot"):
+            lg_logger.info("Fasta of type uniprot")
             url = "https://rest.uniprot.org/uniprotkb/stream?format=fasta&query=%28proteome%3A{PROTEOME}%29%20AND%20%28reviewed%3Atrue%29"
             url = url.format(PROTEOME=fasta_name)
-
+            lg_logger.info(url)
+            lg_logger.info(f"Cache not found for {fasta_name}. Downloading from uniprot {url}.")
             all_fastas = requests.get(url).text
+
             with open(output.fasta_file, "w") as f:
                 f.write(all_fastas)
+
         else:
+            lg_logger.info(f"{fasta_type} not recognized as a fasta type")
             raise Exception(f"Unknown fasta type {fasta_type}")
 
 
@@ -175,14 +202,19 @@ def update_comet_config(infile, outfile, config_dict: dict):
     Reads the configuration in the infile and
     writes the updated configuration to the outfile
     """
+    lg_logger.info(f"Updating comet file {infile} to {outfile}, with {config_dict}")
     with open(infile, "r") as f:
-        with open(output, "w+", encoding="utf-8") as of:
+        with open(outfile, "w+", encoding="utf-8") as of:
             for line in f:
                 for key in config_dict:
                     if line.startswith(key):
+                        lg_logger.debug(str(line))
                         line = f"{key} = {config_dict[key]}\n"
+                        lg_logger.debug(str(line))
 
                 of.write(line)
+    lg_logger.info(f"Done updating comet file {infile} to {outfile}, with {config_dict}")
+    return outfile
 
 
 rule generate_comet_config:
@@ -192,11 +224,19 @@ rule generate_comet_config:
     generated by `comet -p` and updating it with the values
     in the config.yml file
     """
+    input:
+        comet_exe = "bin/comet.exe"
     output:
-        param_file = "experiment_assets/{experiment}/{experiment}.comet.params",
+        param_file = "results/{experiment}/{experiment}.comet.params",
+    shadow: "minimal"
     run:
-        comet_config = experiment_configs[experiment]["comet"]
-        update_comet_config("reference_files/comet.params.new", output.param_file, comet_config)
+        lg_logger.info("Getting default comet params")
+        shell(f"set -x; set -e ; set +o pipefail; out=$({input.comet_exe} -p) ; rc=$? ; echo 'Exit code for comet was ' $rc ; exit 0 ")
+        lg_logger.info("Done running shell")
+        comet_config = experiment_configs[wildcards.experiment]["comet"]
+        lg_logger.info(f"Updating comet file comet.params.new to {output}, with {comet_config}")
+        update_comet_config("comet.params.new", output.param_file, comet_config)
+        lg_logger.info("Done updating expmt shell")
 
 
 rule decoy_fasta:
@@ -205,8 +245,8 @@ rule decoy_fasta:
   Generates a concatenated decoy database fasta file
   Currently is unused in this workflow, since it is handled directly by comet
   """
-  input: "experiment_assets/{experiment}/fasta/{fasta_file}.fasta"
-  output: "experiment_assets/{experiment}/fasta/{fasta_file}.decoy.fasta"
+  input: "results/{experiment}/fasta/{fasta_file}.fasta"
+  output: "results/{experiment}/fasta/{fasta_file}.decoy.fasta"
   run:
     pyteomics.fasta.write_decoy_db(
       source=None,
@@ -220,9 +260,9 @@ Future versions of comet might support this better.
 Pre-making the index
 rule comet_index:
   input:
-    fasta = "experiment_assets/{experiment}/fasta/{fasta_file}.fasta",
+    fasta = "results/{experiment}/fasta/{fasta_file}.fasta",
     comet_config = "comet_params/{experiment}.comet.params"
-  output: "experiment_assets/{experiment}/comet/{fasta_file}.fasta.idx"
+  output: "results/{experiment}/comet/{fasta_file}.fasta.idx"
   run:
     shell(f"comet -P{input.comet_config} -D{input.fasta}")
 """
@@ -235,7 +275,7 @@ rule comet_exe:
     output:
         "bin/comet.exe",
     params:
-        source="https://github.com/UWPR/Comet/releases/download/v2022.01.2/comet.linux.exe",
+        source="https://github.com/UWPR/Comet/releases/latest/download/comet.linux.exe",
     run:
         shell("mkdir -p bin")
         shell("wget {params.source} -O {output}")
@@ -259,16 +299,27 @@ rule build_bibliospec:
             f"-j{threads} --abbreviate-paths "
             "--hash optimization=space "
             "address-model=64 "
-            "pwiz pwiz_tools/BiblioSpec "
-            "executables gcc"
+            "pwiz_tools/BiblioSpec "
+            "toolset=gcc"
         )
 
+        binaries = ["BlibBuild", "BlibFilter", "BlibSearch", "BlibToMs2"]
+
         shell("mkdir -p bin")
-        shell("cd bin && git clone --depth 1 https://github.com/ProteoWizard/pwiz.git")
-        shell(f"cd bin/pwiz && {build_cmd}")
-        shell("cp pwiz/build-*/BiblioSpec/*.tar.bz2 bin/.")
-        shell("tar -x --bzip2 -f bin/bibliospec-bin-*-*-release-*.tar.bz2")
-        shell("cd pwiz && bash clean.sh")
+        shell("cd bin && if [ ! -d pwiz ] ;  then git clone --depth 1 https://github.com/ProteoWizard/pwiz.git ; fi")
+
+        # Check if it has already been built 
+        blib_in_build = list(Path("bin/pwiz").rglob("*build*/*/*Blib*"))
+        blib_maps = {k: [blib for blib in blibs if k in str(blib)] for k in binaries}
+
+        if all([v for v in blib_maps.values()]):
+          for k, v in blib_maps.items():
+            shell(f"ln --verbose -s $PWD/{str(v[0])} bin/{k}")
+        else:
+            shell(f"cd bin/pwiz && {build_cmd} | tee buildlog.log")
+            shell("cp pwiz/build-*/BiblioSpec/*.tar.bz2 bin/.")
+            shell("tar -x --bzip2 -f bin/bibliospec-bin-*-*-release-*.tar.bz2")
+            shell("cd pwiz && bash clean.sh")
 
 
 def get_fasta_name(wildcards):
@@ -277,7 +328,7 @@ def get_fasta_name(wildcards):
     from the experiment config
     """
     fasta_name = Path(experiment_configs[wildcards.experiment]['fasta']['value']).stem
-    out = f"experiment_assets/{str(wildcards.experiment)}"
+    out = f"results/{str(wildcards.experiment)}"
     out += f"/fasta/{str(fasta_name)}.fasta"
     return out
 
@@ -289,36 +340,33 @@ rule comet_search:
     """
     input:
         fasta=get_fasta_name,
-        mzml="experiment_assets/{experiment}/mzml/{raw_file}.mzML",
-        comet_config = "experiment_assets/{experiment}/{experiment}.comet.params",
+        mzml="results/{experiment}/mzml/{raw_file}.mzML",
+        comet_config = "results/{experiment}/{experiment}.comet.params",
         comet_executable="bin/comet.exe",
     output:
-        mzid_decoy="experiment_assets/{experiment}/comet/{raw_file}.decoy.mzid",
-        mzid="experiment_assets/{experiment}/comet/{raw_file}.mzid",
-        pepxml_decoy="experiment_assets/{experiment}/comet/{raw_file}.decoy.pep.xml",
-        pepxml="experiment_assets/{experiment}/comet/{raw_file}.pep.xml",
-        sqt_decoy="experiment_assets/{experiment}/comet/{raw_file}.decoy.sqt",
-        sqt="experiment_assets/{experiment}/comet/{raw_file}.sqt",
-        txt_decoy="experiment_assets/{experiment}/comet/{raw_file}.decoy.txt",
-        txt="experiment_assets/{experiment}/comet/{raw_file}.txt",
-        pin="experiment_assets/{experiment}/comet/{raw_file}.pin",
+        mzid_decoy="results/{experiment}/comet/{raw_file}.decoy.mzid",
+        mzid="results/{experiment}/comet/{raw_file}.mzid",
+        pepxml_decoy="results/{experiment}/comet/{raw_file}.decoy.pep.xml",
+        pepxml="results/{experiment}/comet/{raw_file}.pep.xml",
+        sqt_decoy="results/{experiment}/comet/{raw_file}.decoy.sqt",
+        sqt="results/{experiment}/comet/{raw_file}.sqt",
+        txt_decoy="results/{experiment}/comet/{raw_file}.decoy.txt",
+        txt="results/{experiment}/comet/{raw_file}.txt",
+        pin="results/{experiment}/comet/{raw_file}.pin",
     params:
-        base_name="experiment_assets/{experiment}/comet/{raw_file}",
+        base_name="results/{experiment}/comet/{raw_file}",
     threads: 20
     run:
-        update_dict = {
-            "num_threads": threads,
-            "output_sqtfile": 1,
-            "output_txtfile": 1,
-            "output_pepxmlfile": 1,
-            "output_mzidentmlfile": 1,
-            "output_percolatorfile": 1,
-            "decoy_search": 2,
-        }
-        with tmpdir.tempfile() as tmp_config:
-            update_comet_config(input.comet_config, tmp_config, update_dict)
-            shell_cmd = f"{comet_executable} -P{tmp_config} -D{input.fasta} -N{params.base_name} {input.mzml}"
-            shell(shell_cmd)
+        lg_logger.info("Starting Comet")
+        update_dict = { "num_threads": 5, "output_sqtfile": 1, "output_txtfile": 1, "output_pepxmlfile": 1, "output_mzidentmlfile": 1, "output_percolatorfile": 1, "decoy_search": 2 }
+        handle, tmp_config = tempfile.mkstemp("config", dir = f"results/{wildcards.experiment}/comet/")
+
+        lg_logger.info(f"Updating Params with: {update_dict}")
+        update_comet_config(str(input.comet_config), str(tmp_config), update_dict)
+
+        shell_cmd = f"{input.comet_executable} -P{tmp_config} -D{input.fasta} -N{params.base_name} {input.mzml}"
+        lg_logger.info(f"Executing {shell_cmd}")
+        shell(shell_cmd)
 
 
 rule mokapot:
@@ -328,28 +376,31 @@ rule mokapot:
     It is very fast, takes ~ 20 seconds per file.
     """
     input:
-        pin_files = lambda x: exp_files_map[x.experiment]['pin']
+        pin_files = lambda x: exp_files_map[x.experiment]['pin'],
+        fasta=get_fasta_name,
     output:
-        decoy_peptides = "experiment_assets/{experiment}/mokapot/mokapot.decoy.peptides.txt",
-        decoy_proteins = "experiment_assets/{experiment}/mokapot/mokapot.decoy.proteins.txt",
-        decoy_psms = "experiment_assets/{experiment}/mokapot/mokapot.decoy.psms.txt",
-        peptides = "experiment_assets/{experiment}/mokapot/mokapot.peptides.txt",
-        proteins = "experiment_assets/{experiment}/mokapot/mokapot.proteins.txt",
-        psms = "experiment_assets/{experiment}/mokapot/mokapot.psms.txt",
+        decoy_peptides = "results/{experiment}/mokapot/mokapot.decoy.peptides.txt",
+        decoy_proteins = "results/{experiment}/mokapot/mokapot.decoy.proteins.txt",
+        decoy_psms = "results/{experiment}/mokapot/mokapot.decoy.psms.txt",
+        peptides = "results/{experiment}/mokapot/mokapot.peptides.txt",
+        proteins = "results/{experiment}/mokapot/mokapot.proteins.txt",
+        psms = "results/{experiment}/mokapot/mokapot.psms.txt",
     params:
-        out_dir = "experiment_assets/{experiment}/mokapot/",
+        out_dir = "results/{experiment}/mokapot/",
     run:
-        shell_cmd = (
-            'mokapot --keep_decoys '
-            '--enzyme "[KR]" '
-            '--proteins HUMAN.fasta '
-            '--decoy_prefix "DECOY_" '
-            '--aggregate '
-            f'--dest_dir {out_dir} '
-            " ".join(input.pin_files)
-        )
-        shell(shell_cmd)
+        shell_cmd = [
+            ' mokapot --keep_decoys ',
+            '--enzyme "[KR]" ',
+            '--proteins {input.fasta} ',
+            '--decoy_prefix "DECOY_" ',
+            '--aggregate ',
+            f'--dest_dir {params.out_dir} ',
+            " ".join(input.pin_files),
+        ]
 
+        shell_cmd = " ".join(shell_cmd)
+        lg_logger.info(f"Running: {shell_cmd}")
+        shell(shell_cmd)
 
 
 @contextmanager
@@ -360,15 +411,15 @@ def temporary_links(files, target_dir):
         # The actual path for the link
         link = target_dir / Path(mzml).name
         link.symlink_to(mzml)
-        logger.debug(f"Created link {link} to {mzml}")
+        lg_logger.debug(f"Created link {link} to {mzml}")
         linked_files.append(link)
     yield linked_files
     for link in linked_files:
         if link.is_symlink():
             link.unlink()
-            logger.debug(f"Removed link {link}")
+            lg_logger.debug(f"Removed link {link}")
         else:
-            logger.error(f"Link {link} is not a link anymore")
+            lg_logger.error(f"Link {link} is not a link anymore")
             raise RuntimeError(f"Link {link} is not a link anymore")
 
 
@@ -380,15 +431,15 @@ rule bibliospec:
     input:
         blib_exe = "bin/BlibBuild",
         blib_filter = "bin/BlibFilter",
-        psms = "experiment_assets/{experiment}/mokapot/mokapot.psms.txt",
+        psms = "results/{experiment}/mokapot/mokapot.psms.txt",
         mzML = lambda x: exp_files_map[x.experiment]['mzML']
     output:
-        ssl_file = "experiment_assets/{experiment}/bibliospec/{experiment}.ssl",
-        library_name = "experiment_assets/{experiment}/bibliospec/{experiment}.blib",
+        ssl_file = "results/{experiment}/bibliospec/{experiment}.ssl",
+        library_name = "results/{experiment}/bibliospec/{experiment}.blib",
     params:
-        out_dir = "experiment_assets/{experiment}/bibliospec/",
+        out_dir = "results/{experiment}/bibliospec/",
     run:
-        logger.info("Converting psms to ssl")
+        lg_logger.info("Converting psms to ssl")
         convert_to_ssl(input.psms, output.ssl_file)
 
         shell_cmd = [
@@ -402,8 +453,8 @@ rule bibliospec:
         ]
         shell(" ".join(shell_cmd))
         # This creates soft links in the so bibliospec can find the raw spectra
-        with temporary_links(input.mzML, f"experiment_assets/{wildcards.experiment}/") as linked_files:
-            logger.info("Running bibliospec: %s", shell_cmd)
+        with temporary_links(input.mzML, f"results/{wildcards.experiment}/") as linked_files:
+            lg_logger.info("Running bibliospec: %s", shell_cmd)
             shell(shell_cmd)
 
 

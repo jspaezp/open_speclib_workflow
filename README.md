@@ -1,8 +1,10 @@
 
-**This in still in progress, it will not run**
+# Workflow to run a mass spec search and generate spectral libraries
 
 1. Yaml validation
-2. Discover system comet and bibliospec
+2. Discover system comet and bibliospec, or add config option
+3. moularize
+  - https://snakemake.readthedocs.io/en/stable/snakefiles/deployment.html
 
 
 ## Configuration
@@ -68,6 +70,64 @@ experiments:
 
 You need to provide a yaml configuration with the `--configfile` option
 
+You can run this to check the workflow with that dummy configuration:
+
 ```shell
-poetry run snakemake --dry-run -s snakefile.smk --configfile ./reference_files/run.yml
+poetry run snakemake --verbose --cores 1 --directory $PWD -s snakefile.smk --configfile ./reference_files/run.yml --dry-run
 ```
+
+## Project directory structure
+
+```
+.
+├── README.md ####################### This file #########################################
+├── build_tools
+│   └── docker_build_bibliospec ##### Has a container that builds BiblioSpec ############
+│       ├── DOCKERFILE
+│       ├── build.bash
+│       └── pwiz #################### proteowizard ######################################
+│           ├── .....
+├── extras
+│   └── msconvert_gsutil.sh # Utility script to convert files inside google cloud services
+├── open_speclib_workflow # placeholder directory
+├── poetry.lock
+├── pyproject.toml
+├── raw_files
+│   ├── 20181221_N15cm_3_Hela_2ug_10min_R1.mzML
+│   ├── 20181221_N15cm_3_Hela_2ug_10min_R1.raw
+│   ├── HUMAN.fasta
+│   ├── README.md
+│   └── comet.params
+├── reference_files ################# Files to use as a reference for the workflow ######
+│   ├── comet.params.new
+│   ├── fakefiles
+│   │   ├── file1.mzML
+│   │   ├── foo.mzML
+│   │   ├── otherfile.mzML
+│   │   └── others2.mzML
+│   └── run.yml
+├── requirements.txt
+├── snakefile.smk ################### <<<<<<< main snakemake file >>>>>>>> ###############
+└── test
+    ├── 20181210_15cm_3_HelaDilution_30min_0ng_28Hz_R1.mzML
+    ├── 20181210_15cm_3_HelaDilution_30min_1000ng_28Hz_R1.mzML
+    ├── 20181210_15cm_3_HelaDilution_30min_1000ng_41Hz_R1.mzML
+    ├── DOCKERFILE
+    ├── README.md
+    ├── convert_data.bash
+    ├── dockerized_run.bash
+    ├── download_data.bash
+    ├── download_truncated.bash
+    └── run.yml
+
+```
+
+## Testing
+
+### Full workflow run
+
+Run the dockerized version in the `tests` directory
+
+### Check management
+
+`tox` runs a dry run on the dummy data inside `reference_files`

@@ -1,0 +1,26 @@
+title: Supercoolrun
+default:
+  fdr_level: protein
+  comet:
+    peptide_mass_tolerance: 20
+    num_threads: 10
+  fasta:
+    type: uniprot
+    value: UP000005640
+  BiblioSpec:
+    cutoff: 0.99
+combine:
+  - name: SuperCoolCombination
+    experiments:
+      - Firstexp
+experiments:
+  - name: Firstexp
+    files:
+      - 20181210_15cm_3_HelaDilution_30min_0ng_28Hz_R1.mzML
+      - 20181210_15cm_3_HelaDilution_30min_1000ng_28Hz_R1.mzML
+      - 20181210_15cm_3_HelaDilution_30min_1000ng_41Hz_R1.mzML
+    fasta:
+      type: uniprot
+      value: UP000005640
+    comet:
+      peptide_mass_tolerance: 20

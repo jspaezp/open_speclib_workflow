@@ -20,8 +20,8 @@ combine:
 experiments:
   - name: Firstexp
     files:
-      - /path/to/raw/file1.mzML
-      - /path/to/raw/otherfile.mzML
+      - reference_files/fakefiles/file1.mzML
+      - reference_files/fakefiles/otherfile.mzML
     fasta:
       type: uniprot
       value: UP000005640
@@ -29,8 +29,8 @@ experiments:
       peptide_mass_tolerance: 20
   - name: Secondexp
     files:
-      - /path/to/others.mzML
-      - /path/to/others2.mzML
+      - reference_files/fakefiles/foo.mzML
+      - reference_files/fakefiles/others2.mzML
     fasta:
       type: uniprot
       value: UP000000589
