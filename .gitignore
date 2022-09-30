@@ -8,3 +8,9 @@ BlibBuild
 BlibFilter
 BlibSearch
 BlibToMS2
+test/results
+test/mzml
+test/data
+test/bin/comet.exe
+test/requirements.txt
+test/snakefile.smk

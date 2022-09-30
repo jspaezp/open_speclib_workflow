@@ -68,13 +68,12 @@ def expand_files(combine_configs, experiment_configs):
         files.append(f"results/{experiment}/fasta/{fasta_name}.fasta")
         tmp_psm_files = exp_values["files"]
         tmp_psm_files = [Path(x).stem for x in tmp_psm_files]
+        exp_files_map[experiment]['mzML'] = exp_values["files"]
         for raw_file in tmp_psm_files:
             pin_file = f"results/{experiment}/comet/{raw_file}.pin"
-            mzml_file = f"results/{experiment}/mzml/{raw_file}.mzML"
             exp_files_map[experiment]['pin'].append(pin_file)
-            exp_files_map[experiment]['mzML'].append(mzml_file)
             files.append(pin_file)
-            files.append(mzml_file)
+        
 
     lg_logger.info(f"Expanded files: {files}")
     for f in files:
@@ -386,15 +385,15 @@ rule mokapot:
         proteins = "results/{experiment}/mokapot/mokapot.proteins.txt",
         psms = "results/{experiment}/mokapot/mokapot.psms.txt",
     params:
-        out_dir = "results/{experiment}/mokapot/",
+        out_dir = "",
     run:
         shell_cmd = [
             ' mokapot --keep_decoys ',
             '--enzyme "[KR]" ',
-            '--proteins {input.fasta} ',
+            f'--proteins {input.fasta} ',
             '--decoy_prefix "DECOY_" ',
             '--aggregate ',
-            f'--dest_dir {params.out_dir} ',
+            f'--dest_dir results/{wildcards.experiment}/mokapot/ ',
             " ".join(input.pin_files),
         ]
 
@@ -404,23 +403,37 @@ rule mokapot:
 
 
 @contextmanager
-def temporary_links(files, target_dir):
+def temporary_links(files, target_dir, clean = True):
+    lg_logger.info(f"Linking {files} to {target_dir}")
     target_dir = Path(target_dir)
     linked_files = []
-    for mzml in input.mzML:
-        # The actual path for the link
+    for mzml in files:
+
+        mzml = Path(mzml)
+        assert mzml.exists(), f"Original file {mzml} does not exist"
         link = target_dir / Path(mzml).name
-        link.symlink_to(mzml)
-        lg_logger.debug(f"Created link {link} to {mzml}")
-        linked_files.append(link)
-    yield linked_files
-    for link in linked_files:
-        if link.is_symlink():
-            link.unlink()
-            lg_logger.debug(f"Removed link {link}")
+        if link.exists():
+            lg_logger.debug(f"Link {link} already exists, skipping")
+            continue
         else:
-            lg_logger.error(f"Link {link} is not a link anymore")
-            raise RuntimeError(f"Link {link} is not a link anymore")
+            lg_logger.debug(f"Copying {mzml} to {link}")
+            # This is a hard link
+            import shutil
+            shutil.copy(str(mzml), str(link))
+            if not link.exists():
+                lg_logger.debug(f"Link {link} does not exist, check the original file ...")
+            linked_files.append(link)
+    try:
+        yield linked_files
+    finally:
+        for link in linked_files:
+            if link.is_symlink():
+                if clean:
+                    link.unlink()
+                    lg_logger.debug(f"Removed link {link}")
+            else:
+                lg_logger.error(f"Link {link} is not a link anymore")
+                raise RuntimeError(f"Link {link} is not a link anymore")
 
 
 rule bibliospec:
@@ -436,9 +449,8 @@ rule bibliospec:
     output:
         ssl_file = "results/{experiment}/bibliospec/{experiment}.ssl",
         library_name = "results/{experiment}/bibliospec/{experiment}.blib",
-    params:
-        out_dir = "results/{experiment}/bibliospec/",
     run:
+        shell(f"mkdir -p results/{wildcards.experiment}/bibliospec")
         lg_logger.info("Converting psms to ssl")
         convert_to_ssl(input.psms, output.ssl_file)
         lg_logger.info("Done Converting psms to ssl")
@@ -449,16 +461,21 @@ rule bibliospec:
             f"-c {experiment_configs[wildcards.experiment]['BiblioSpec']['cutoff']}", # TODO refactor this ...
             "-m 500M", # sqlite cache size
             "-A", # warns ambiguous spectra
-            " ".join(input.psms),
+            str(output.ssl_file),
             str(output.library_name),
         ]
         shell_cmd = " ".join(shell_cmd)
-        lg_logger.info("Running: {shell_cmd}")
+        lg_logger.info("Prepping for bibliospec")
         # This creates soft links in the so bibliospec can find the raw spectra
-        with temporary_links(input.mzML, f"results/{wildcards.experiment}/") as linked_files:
-            lg_logger.info("Running bibliospec: %s", shell_cmd)
-            shell(shell_cmd)
+        with temporary_links(files=input.mzML, target_dir=f"results/{wildcards.experiment}/bibliospec", clean=True) as linked_files:
+            lg_logger.info(f"Running bibliospec: {shell_cmd}")
+            import subprocess
+            out = subprocess.run(shell_cmd, shell=True, check=False, capture_output=True)
+            lg_logger.debug(f"Stdout: {out.stdout}")
+            lg_logger.debug(f"Stderr: {out.stderr}")
 
+# bin/BlibFilter --memory-cache 500M --min-peaks 5 --min-score 0.99 ./results/Firstexp/bibliospec/Firstexp.blib ./results/Firstexp/bibliospec/Firstexp.filter.blib
+# bin/BlibToMs2 --mz-precision 6 ./results/Firstexp/bibliospec/Firstexp.filter.blib
 
 def convert_to_ssl(input_file, output_file):
     lg_logger.info(f"Reading File {input_file}")
@@ -481,6 +498,7 @@ def convert_to_ssl(input_file, output_file):
 
     lg_logger.info("Processing File")
     out_df = pd.DataFrame([_parse_line(x) for _, x in df.iterrows()])
+    lg_logger.debug(f"{out_df}")
     lg_logger.info(f"Writting output: {output_file}")
     out_df.to_csv(output_file, sep="\t", index=False, header=True)
     lg_logger.info("Done")
@@ -503,7 +521,7 @@ def _parse_line(line):
     sequence = line.Peptide[first_period + 1 : last_period]
 
     line_out = {
-        "file": file_name,
+        "file": Path(file_name).stem+".mzML",
         "scan": spec_number,
         "charge": charge,
         "sequence": sequence,

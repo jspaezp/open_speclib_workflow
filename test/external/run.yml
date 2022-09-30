@@ -16,9 +16,9 @@ combine:
 experiments:
   - name: Firstexp
     files:
-      - 20181210_15cm_3_HelaDilution_30min_0ng_28Hz_R1.mzML
-      - 20181210_15cm_3_HelaDilution_30min_1000ng_28Hz_R1.mzML
-      - 20181210_15cm_3_HelaDilution_30min_1000ng_41Hz_R1.mzML
+      - mzml/20181210_15cm_3_HelaDilution_30min_0ng_28Hz_R1.mzML
+      - mzml/20181210_15cm_3_HelaDilution_30min_1000ng_28Hz_R1.mzML
+      - mzml/20181210_15cm_3_HelaDilution_30min_1000ng_41Hz_R1.mzML
     fasta:
       type: uniprot
       value: UP000005640
